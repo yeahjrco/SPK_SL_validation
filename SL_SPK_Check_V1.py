@@ -108,8 +108,8 @@ def map_valid_SL_SPK_Xref(df_valid_SL,df_MARC,df_SPK_Xref,df_GAR_Plants):
 
 def check_valid_SL_SPK_Xref(df_valid_SL_map_SPK_Xref):
     #Identify Dual sources
-    df_dual_SL = df_valid_SL_map_SPK_Xref[df_valid_SL_map_SPK_Xref.duplicated(['Material/Plant'],keep=False)]
-    df_valid_SL_map_SPK_Xref.loc[df_dual_SL,"Comment"] = "MDO action, check dual sources"
+    #df_dual_SL = df_valid_SL_map_SPK_Xref[df_valid_SL_map_SPK_Xref.duplicated(['Material/Plant'],keep=False)]
+    df_valid_SL_map_SPK_Xref.loc[df_valid_SL_map_SPK_Xref.duplicated(['Material/Plant'],keep=False),"Comment"] = "MDO action, check dual sources"
 
     #Filter out cancelled SKU in plant
     df_valid_SL_map_SPK_Xref.loc[(df_valid_SL_map_SPK_Xref['Plant Status'].isna()) | (df_valid_SL_map_SPK_Xref['Plant Status']=='70.0'),"Comment"]="MDO action,SKU cancelled in Plant,why SL still exist?"
@@ -196,12 +196,11 @@ def get_Intraco_CN_JP(df_valid_SL_map_SPK_Xref,df_GAR_Plants):
 
     df_Intra_CN_JP = pd.concat([df_Intra_CN,df_Intra_JP],ignore_index=True)
 
-    '''
     df_Intra_CN_JP['Material/IntraCo Procurement Plant']=df_Intra_CN_JP['Material']+"/"+df_Intra_CN_JP['Vendor'].str[3:]
 
     df_Intra_CN_JP = pd.merge(df_Intra_CN_JP,df_MARC[['Material/IntraCo Procurement Plant','Plant-sp.matl status','SpecProcurem Costing']],on='Material/IntraCo Procurement Plant',how='left')
     df_Intra_CN_JP.rename(columns={'Plant-sp.matl status':'InterCo Procurement Plant Status','SpecProcurem Costing':'InterCo Procurement Plant SPK'},inplace=True)
-    '''
+    
     return df_Intra_CN_JP
 
 def check_Intraco_CN_JP(df_Intra_CN_JP):
@@ -235,121 +234,19 @@ print('Time taken in seconds outputting file - EORD Out of scope: ' + str(output
 #Output dataframe df_valid_SL
 t7 = time.time()
 df_valid_SL = get_valid_SL(df_EORD_raw,df_EORD_invalid,df_EORD_plants_OOS)
-'''
 df_valid_SL_map_SPK_Xref_WIP = map_valid_SL_SPK_Xref(df_valid_SL,df_MARC,df_SPK_Xref,df_GAR_Plants)
 df_valid_SL_map_SPK_Xref = check_valid_SL_SPK_Xref(df_valid_SL_map_SPK_Xref_WIP)
 
 df_cty_via_Apex_SPK_WIP = get_buy_via_Apex(df_valid_SL_map_SPK_Xref,df_MARC,df_MVKE_3090,df_MG5_Xref)
 df_cty_via_Apex_SPK = check_buy_via_Apex(df_cty_via_Apex_SPK_WIP)
-'''
-
-df_valid_SL_map_MARC = pd.merge(df_valid_SL,df_MARC[['Material/Plant','Plant-sp.matl status','SpecProcurem Costing']],on='Material/Plant',how='left')
-df_valid_SL_map_SPK_Xref = pd.merge(df_valid_SL_map_MARC,df_SPK_Xref[['Vendor','Vendor to SPK']],on='Vendor',how='left')
-df_valid_SL_map_SPK_Xref = pd.merge(df_valid_SL_map_SPK_Xref,df_GAR_Plants[['Plant','Country']],on='Plant',how='left')
-
-df_valid_SL_map_SPK_Xref.rename(columns={'Plant-sp.matl status':'Plant Status','SpecProcurem Costing':'Plant SPK'},inplace=True)
-
-#print(df_valid_SL_map_SPK_Xref.columns)
-
-#check if External vendor, if yes, SPK='20'
-df_valid_SL_map_SPK_Xref.loc[df_valid_SL_map_SPK_Xref['Vendor'].str.startswith('1'),'Vendor to SPK']='20'
-df_valid_SL_map_SPK_Xref.loc[df_valid_SL_map_SPK_Xref['Vendor']=='9000341','Vendor to SPK']='Ok,buy from 9000341 (Swissco),FIN review in Year end'
-df_valid_SL_map_SPK_Xref.loc[df_valid_SL_map_SPK_Xref['Vendor']=='9000341','Comment']='Ok,buy from 9000341 (Swissco),FIN review in Year end'
-
-#Identify Dual sources 
-df_dual_SL = df_valid_SL_map_SPK_Xref[df_valid_SL_map_SPK_Xref.duplicated(['Material/Plant'],keep=False)]
-df_valid_SL_map_SPK_Xref.loc[df_valid_SL_map_SPK_Xref.duplicated(['Material/Plant'],keep=False),"Comment"] = "MDO action, check dual sources"
-
-#Filter out cancelled SKU in plant
-df_valid_SL_map_SPK_Xref.loc[(df_valid_SL_map_SPK_Xref['Plant Status'].isna()) | (df_valid_SL_map_SPK_Xref['Plant Status']=='70.0'),"Comment"]="MDO action,SKU cancelled in Plant,why SL still exist?"
-
-#Filter out cty buy from Apex 9000340
-df_valid_SL_map_SPK_Xref.loc[(df_valid_SL_map_SPK_Xref['Vendor']=='9000340') & (df_valid_SL_map_SPK_Xref["Comment"].isna()),"Comment"]="Cty Buy via Apex"
-
-
-#Create new table to store SKU buy via Apex
-df_cty_via_Apex = df_valid_SL_map_SPK_Xref[df_valid_SL_map_SPK_Xref["Comment"]=="Cty Buy via Apex"]
-
-df_cty_via_Apex["Material/3090"] = df_cty_via_Apex['Material'] + "/3090"
-#print(df_cty_via_Apex.columns)
-
-df_MARC_3090 = df_MARC[df_MARC['Plant']=='3090']
-df_MARC_3090.rename(columns={'Material/Plant':'Material/3090','Plant-sp.matl status':'Plant Status in 3090','SpecProcurem Costing':'SPK in 3090'},inplace=True)
-
-
-df_EORD_3090 = df_valid_SL_map_SPK_Xref[df_valid_SL_map_SPK_Xref['Plant']=='3090']
-df_EORD_3090.rename(columns={'Material/Plant':'Material/3090','Vendor':'Vendor in 3090'},inplace=True)
-
-df_cty_via_Apex_SPK = pd.merge(df_cty_via_Apex,df_MARC_3090[['Material/3090','Plant Status in 3090','SPK in 3090']],on='Material/3090',how='left')
-df_cty_via_Apex_SPK = pd.merge(df_cty_via_Apex_SPK,df_EORD_3090[['Material/3090','Vendor in 3090']],on='Material/3090',how='left')
-
-#print(df_cty_via_Apex_SPK.columns)
-
-
-#Get MG5 into Apex file
-df_MVKE_3090 = pd.merge(df_MVKE_3090,df_MG5_Xref[['Default Plant','Apex MG5 to Vendor SPK']],on='Default Plant',how='left')
-df_cty_via_Apex_SPK = pd.merge(df_cty_via_Apex_SPK,df_MVKE_3090[['Material','Default Plant','Apex MG5 to Vendor SPK']],on='Material',how='left')
-#print(df_cty_via_Apex_SPK[df_cty_via_Apex_SPK.duplicated(subset=['Material/Plant/Number'],keep=False)])
-
-df_cty_via_Apex_SPK.loc[
-    ((df_cty_via_Apex_SPK['Vendor in 3090'].str.startswith('1')) | (df_cty_via_Apex_SPK['Vendor in 3090']=='9000033')) &
-    (df_cty_via_Apex_SPK['Plant SPK']=='5S' )&
-    (df_cty_via_Apex_SPK['Comment']=='Cty Buy via Apex'),
-    'Comment'] = "Ok, Buy via Apex via Temse or 3rd party"
-
-df_cty_via_Apex_SPK.loc[
-    ((df_cty_via_Apex_SPK['Vendor in 3090'].str.startswith('1')) | (df_cty_via_Apex_SPK['Vendor in 3090']=='9000033')) &
-    (df_cty_via_Apex_SPK['Plant SPK']!='5S' )&
-    (df_cty_via_Apex_SPK['Comment']=='Cty Buy via Apex'),
-    'Comment'] = "MDO action, Apex buy from Non-ECC vendor but country SPK is not 5S"
-
-df_cty_via_Apex_SPK.loc[
-    (df_cty_via_Apex_SPK['Comment']=='Cty Buy via Apex') &
-    (df_cty_via_Apex_SPK['Vendor in 3090'].isna()) &
-    (df_cty_via_Apex_SPK['Default Plant']=='300'),'Comment'] ='MDO action,check with Apex MDO Apex SL missing but MG5=300'
-
-df_cty_via_Apex_SPK.loc[
-    (df_cty_via_Apex_SPK['Plant SPK']==df_cty_via_Apex_SPK['Apex MG5 to Vendor SPK']) &
-    (df_cty_via_Apex_SPK['Comment']=='Cty Buy via Apex'), 
-    'Comment']="Ok, Cty SPK match with Apex MG5"
-
-df_cty_via_Apex_SPK.loc[
-    (df_cty_via_Apex_SPK['Comment']=='Cty Buy via Apex') &
-    (df_cty_via_Apex_SPK['Apex MG5 to Vendor SPK'].isna()),'Comment'] ='MDO action,check with Apex MDO as 3000/20 MG5 not in scope'
-
-df_cty_via_Apex_SPK.loc[
-    (df_cty_via_Apex_SPK['Comment']=='Cty Buy via Apex'),'Comment'] ='MDO action,Cty SPK mistmatch with Apex MG5, pls check with Apex MDO on what is the actual source'
 
 
 #Filter out intra-company purchase in China & Japan (Special SPK model Sub DC SPK = Main DC SPK = End source)
-df_Intra_CN_JP = get_Intraco_CN_JP(df_valid_SL_map_SPK_Xref,df_GAR_Plants)
-'''
 df_Intra_CN_JP_WIP = get_Intraco_CN_JP(df_valid_SL_map_SPK_Xref,df_GAR_Plants)
-'''
-df_valid_SL_map_SPK_Xref.loc[df_valid_SL_map_SPK_Xref['Material/Plant/Number'].isin(df_Intra_CN_JP['Material/Plant/Number']),"Comment"] = "CN,JP Intra-company SL"
-'''
+
+df_valid_SL_map_SPK_Xref.loc[df_valid_SL_map_SPK_Xref['Material/Plant/Number'].isin(df_Intra_CN_JP_WIP['Material/Plant/Number']),"Comment"] = "CN,JP Intra-company SL"
+
 df_Intra_CN_JP = check_Intraco_CN_JP(df_Intra_CN_JP_WIP)
-
-'''
-df_Intra_CN_JP['Material/IntraCo Procurement Plant']=df_Intra_CN_JP['Material']+"/"+df_Intra_CN_JP['Vendor'].str[3:]
-
-df_Intra_CN_JP = pd.merge(df_Intra_CN_JP,df_MARC[['Material/IntraCo Procurement Plant','Plant-sp.matl status','SpecProcurem Costing']],on='Material/IntraCo Procurement Plant',how='left')
-df_Intra_CN_JP.rename(columns={'Plant-sp.matl status':'InterCo Procurement Plant Status','SpecProcurem Costing':'InterCo Procurement Plant SPK'},inplace=True)
-#print(df_Intra_CN_JP.columns)
-
-df_Intra_CN_JP.loc[
-    (df_Intra_CN_JP['Plant SPK']==df_Intra_CN_JP['InterCo Procurement Plant SPK']),
-    'Comment']="Ok, InterCo Sub Plant SPK match Main Plant SPK"
-
-df_Intra_CN_JP.loc[
-    (df_Intra_CN_JP['Comment'].isna()) &
-    (df_Intra_CN_JP['InterCo Procurement Plant Status'].isna()),
-    'Comment']="MDO action, InterCo Main Plant obsolete,but Sub plant still active,can discon in Sub Plant?"
-
-df_Intra_CN_JP.loc[
-    (df_Intra_CN_JP['Comment'].isna()),
-    'Comment']="MDO action, InterCo Sub plant and Main plant SPK mismatch"
-
 
 #In Main SL sheet, Check if Cty SPK = Vendor SPK for records with no comments yet
 df_valid_SL_map_SPK_Xref.loc[
@@ -374,13 +271,13 @@ print('Time taken in seconds outputting file - EORD valid_SL ' + str(output7))
 #Extract into Excel
 t6 = time.time()
 
-excel_writer = pd.ExcelWriter(DATAPATH + "SPK_SL_Output_V1." + "xlsx", engine = 'xlsxwriter')
+excel_writer = pd.ExcelWriter(DATAPATH + "SPK_SL_Output_V2." + "xlsx", engine = 'xlsxwriter')
 #df_EORD_invalid.to_excel(excel_writer,index = False, sheet_name = 'Invalid SL')
 #df_GAR_Plants.to_excel(excel_writer,index = False, sheet_name = 'GAR Plants')
 #df_EORD_plants_OOS.to_excel(excel_writer,index = False, sheet_name = 'GAR Plants OOS')
 #df_valid_SL.to_excel(excel_writer,index = False, sheet_name = 'Valid SL')
 df_valid_SL_map_SPK_Xref.to_excel(excel_writer,index = False, sheet_name = 'Valid SL with SPK')
-df_cty_via_Apex.to_excel(excel_writer,index = False, sheet_name = 'SKU via APEX')
+#df_cty_via_Apex.to_excel(excel_writer,index = False, sheet_name = 'SKU via APEX')
 df_Intra_CN_JP.to_excel(excel_writer,index = False, sheet_name = 'CN_JP_Intra')
 df_cty_via_Apex_SPK.to_excel(excel_writer,index = False, sheet_name = 'SKU via APEX SPK')
 excel_writer.save()
