@@ -176,6 +176,10 @@ def check_buy_via_Apex(df_cty_via_Apex_SPK):
         'Comment']="Ok, Cty SPK match with Apex MG5"
 
     df_cty_via_Apex_SPK.loc[
+    (df_cty_via_Apex_SPK['Comment']=="Cty Buy via Apex, check sheet 'SKU via Apex SPK' for more details") &
+    (df_cty_via_Apex_SPK['Default Plant'].isna()),'Comment'] ='MDO action,check with Apex MDO as SKU not extended under 3000/20'
+
+    df_cty_via_Apex_SPK.loc[
         (df_cty_via_Apex_SPK['Comment']=="Cty Buy via Apex, check sheet 'SKU via Apex SPK' for more details") &
         (df_cty_via_Apex_SPK['Apex MG5 to Vendor SPK'].isna()),'Comment'] ='MDO action,check with Apex MDO as 3000/20 MG5 not in scope'
 
