@@ -15,6 +15,7 @@ DATAPATH_DIM="./Dim/"
 #Report from ECC
 DATAFILE_EORD = "EORD_GAR.XLSX"
 DATAFILE_MARC = 'MARC_GAR.xlsx'
+DATAFILE_MARA = 'MARA_GAR.xlsx'
 DATAFILE_MVKE_3090 = "MVKE_3090.xlsx"
 
 #X-refence / Dimension files
@@ -37,6 +38,7 @@ logging.info("Loading Plants/SPK X-Ref file into data frame...")
 
 t1 = time.time()
 df_MARC= pd.read_excel(DATAPATH_RAW + DATAFILE_MARC,engine="openpyxl")
+df_MARA= pd.read_excel(DATAPATH_RAW + DATAFILE_MARA,engine="openpyxl")
 df_MVKE_3090 = pd.read_excel(DATAPATH_RAW + DATAFILE_MVKE_3090,engine="openpyxl")
 df_GAR_Plants = pd.read_excel(DATAPATH_DIM + DATAFILE_GAR_PLANTS,engine="openpyxl")
 df_SPK_Xref= pd.read_excel(DATAPATH_DIM + DATAFILE_SPK_Xref,engine="openpyxl")
@@ -95,6 +97,12 @@ def get_plants_OOS(df_EORD,df_plant):
     df_plants_OOS = df_EORD[is_plants_OOS]
     return df_plants_OOS
 
+def get_plants_IS(df_MARC,df_plant):
+    plants_IS = df_plant[df_plant['SPK SL Project']=="Yes"]
+    is_plants_IS = df_MARC['Plant'].isin(plants_IS['Plant'])
+    df_plants_IS = df_MARC[is_plants_IS]
+    return df_plants_IS
+
 #Filter out expired & blocked & OOS records to get valid SL
 def get_valid_SL(df_EORD,df_invalid_SL,df_plants_OOS):
     df_invalid = pd.concat([df_invalid_SL,df_plants_OOS]).drop_duplicates(subset = 'Material/Plant/Number')
@@ -133,11 +141,11 @@ def get_buy_via_Apex(df_valid_SL_map_SPK_Xref,df_MARC,df_MVKE_3090,df_MG5_Xref):
     df_cty_via_Apex = df_valid_SL_map_SPK_Xref[df_valid_SL_map_SPK_Xref["Comment"]=="Cty Buy via Apex, check sheet 'SKU via Apex SPK' for more details"]
 
     df_cty_via_Apex["Material/3090"] = df_cty_via_Apex['Material'] + "/3090"
-
+    #filter out 3090 plant status
     df_MARC_3090 = df_MARC[df_MARC['Plant']=='3090']
     df_MARC_3090.rename(columns={'Material/Plant':'Material/3090','Plant-sp.matl status':'Plant Status in 3090','SpecProcurem Costing':'SPK in 3090'},inplace=True)
 
-
+    #filter out 3090 SL
     df_EORD_3090 = df_valid_SL_map_SPK_Xref[df_valid_SL_map_SPK_Xref['Plant']=='3090']
     df_EORD_3090.rename(columns={'Material/Plant':'Material/3090','Vendor':'Vendor in 3090'},inplace=True)
 
@@ -153,38 +161,45 @@ def get_buy_via_Apex(df_valid_SL_map_SPK_Xref,df_MARC,df_MVKE_3090,df_MG5_Xref):
 
 #Comment based on different Apex scenario
 def check_buy_via_Apex(df_cty_via_Apex_SPK):
+    #if SKU buy from Apex via 3rd party or temse, then cty SPK should be 5S
     df_cty_via_Apex_SPK.loc[
         ((df_cty_via_Apex_SPK['Vendor in 3090'].str.startswith('1')) | (df_cty_via_Apex_SPK['Vendor in 3090']=='9000033')) &
         (df_cty_via_Apex_SPK['Plant SPK']=='5S' )&
         (df_cty_via_Apex_SPK['Comment']=="Cty Buy via Apex, check sheet 'SKU via Apex SPK' for more details"),
         'Comment'] = "Ok, Buy via Apex via Temse or 3rd party"
-
+    #else: highlight MDO action
     df_cty_via_Apex_SPK.loc[
         ((df_cty_via_Apex_SPK['Vendor in 3090'].str.startswith('1')) | (df_cty_via_Apex_SPK['Vendor in 3090']=='9000033')) &
         (df_cty_via_Apex_SPK['Plant SPK']!='5S' )&
         (df_cty_via_Apex_SPK['Comment']=="Cty Buy via Apex, check sheet 'SKU via Apex SPK' for more details"),
         'Comment'] = "MDO action, Apex buy from Non-ECC vendor but country SPK is not 5S"
+    #if SKU buy from Apex via 3rd party or temse, but in plant 3090 already cancelled, MDO action to reconfirm with planner
+    df_cty_via_Apex_SPK.loc[
+        (df_cty_via_Apex_SPK['Comment']=="Cty Buy via Apex, check sheet 'SKU via Apex SPK' for more details") &
+        (df_cty_via_Apex_SPK['Vendor in 3090'].isna()) &
+        ((df_cty_via_Apex_SPK['Plant Status in 3090']=='80') | (df_cty_via_Apex_SPK['Plant Status in 3090']=='70'))&
+        (df_cty_via_Apex_SPK['Default Plant']=='300'),'Comment'] ='MDO action,check with planner if still required to buy via Apex as Apex already cancelled this SKU'
 
     df_cty_via_Apex_SPK.loc[
         (df_cty_via_Apex_SPK['Comment']=="Cty Buy via Apex, check sheet 'SKU via Apex SPK' for more details") &
         (df_cty_via_Apex_SPK['Vendor in 3090'].isna()) &
         (df_cty_via_Apex_SPK['Default Plant']=='300'),'Comment'] ='MDO action,check with Apex MDO Apex SL missing but MG5=300'
-
+    #if cty buy from BD sites and SPK match with Apex MG5, then no issue
     df_cty_via_Apex_SPK.loc[
         (df_cty_via_Apex_SPK['Plant SPK']==df_cty_via_Apex_SPK['Apex MG5 to Vendor SPK']) &
         (df_cty_via_Apex_SPK['Comment']=="Cty Buy via Apex, check sheet 'SKU via Apex SPK' for more details"), 
         'Comment']="Ok, Cty SPK match with Apex MG5"
-
+    #if cty buy from BD sites but Apex MG5 is not maintained, Apex MDO need to check and extend under 3000/20
     df_cty_via_Apex_SPK.loc[
     (df_cty_via_Apex_SPK['Comment']=="Cty Buy via Apex, check sheet 'SKU via Apex SPK' for more details") &
     (df_cty_via_Apex_SPK['Default Plant'].isna()),'Comment'] ='MDO action,check with Apex MDO as SKU not extended under 3000/20'
-
+    #if cty buy from BD sites but Apex MG5 out of scope, Apex MDO need to check and revert
     df_cty_via_Apex_SPK.loc[
         (df_cty_via_Apex_SPK['Comment']=="Cty Buy via Apex, check sheet 'SKU via Apex SPK' for more details") &
         (df_cty_via_Apex_SPK['Apex MG5 to Vendor SPK'].isna()),'Comment'] ='MDO action,check with Apex MDO as 3000/20 MG5 not in scope'
-
+    #if cty buy from Apex but SPK did not match with MG5, check with Apex MDO if exceptional table maintained, if no, reconcil with Planner and Apex MDO for actual source
     df_cty_via_Apex_SPK.loc[
-        (df_cty_via_Apex_SPK['Comment']=="Cty Buy via Apex, check sheet 'SKU via Apex SPK' for more details"),'Comment'] ='MDO action,Cty SPK mistmatch with Apex MG5, pls check with Apex MDO on what is the actual source'
+        (df_cty_via_Apex_SPK['Comment']=="Cty Buy via Apex, check sheet 'SKU via Apex SPK' for more details"),'Comment'] ='MDO action,Cty SPK mistmatch with Apex MG5, pls check with Apex MDO on what is the actual source or if it exists in exceptional table'
 
     return df_cty_via_Apex_SPK
 
@@ -231,6 +246,12 @@ def check_Intraco_CN_JP(df_Intra_CN_JP):
 
     return df_Intra_CN_JP
 
+def get_active_SKU_no_SL(df_MARC,df_EORD_valid):
+    df_MARC_active_SKU = df_MARC[df_MARC['Plant-sp.matl status']=='50']
+    active_SKU_with_SL = df_MARC_active_SKU['Material/Plant'].isin(df_EORD_valid['Material/Plant'])
+    active_SKU_missing_SL = df_MARC_active_SKU[~active_SKU_with_SL]
+    return active_SKU_missing_SL
+
 #Output dataframe df_EORD_invalid
 t4 = time.time()
 df_EORD_invalid = get_invalid_SL(df_EORD_raw)
@@ -253,10 +274,18 @@ df_valid_SL_map_SPK_Xref = check_valid_SL_SPK_Xref(df_valid_SL_map_SPK_Xref_WIP)
 df_cty_via_Apex_SPK_WIP = get_buy_via_Apex(df_valid_SL_map_SPK_Xref,df_MARC,df_MVKE_3090,df_MG5_Xref)
 df_cty_via_Apex_SPK = check_buy_via_Apex(df_cty_via_Apex_SPK_WIP)
 
+#Output dataframe active SKU but missing SL
+df_MARC_plants_IS = get_plants_IS(df_MARC,df_GAR_Plants)
+df_MARC_plants_IS = pd.merge(df_MARC_plants_IS,df_MARA[['Material','Material Type']],on='Material',how='left')
+Material_Type_IS = ['FERT','HAWA','ZICP']
+df_MARC_plants_IS = df_MARC_plants_IS[df_MARC_plants_IS['Material Type'].isin(Material_Type_IS)]
+df_missing_SL = get_active_SKU_no_SL(df_MARC_plants_IS,df_valid_SL_map_SPK_Xref)
+
 #Filter out intra-company purchase in China & Japan (Special SPK model Sub DC SPK = Main DC SPK = End source)
 df_Intra_CN_JP_WIP = get_Intraco_CN_JP(df_valid_SL_map_SPK_Xref,df_GAR_Plants)
 df_valid_SL_map_SPK_Xref.loc[df_valid_SL_map_SPK_Xref['Material/Plant/Number'].isin(df_Intra_CN_JP_WIP['Material/Plant/Number']),"Comment"] = "CN,JP Intra-company SL, check sheet 'CN_JP_Intra' for more details"
 df_Intra_CN_JP = check_Intraco_CN_JP(df_Intra_CN_JP_WIP)
+
 
 #In Main SL sheet, Check if Cty SPK = Vendor SPK for records with no comments yet
 df_valid_SL_map_SPK_Xref.loc[
@@ -305,6 +334,7 @@ df_valid_SL_map_SPK_Xref.to_excel(excel_writer,index = False, sheet_name = 'Vali
 #df_cty_via_Apex.to_excel(excel_writer,index = False, sheet_name = 'SKU via APEX')
 df_Intra_CN_JP.to_excel(excel_writer,index = False, sheet_name = 'CN_JP_Intra')
 df_cty_via_Apex_SPK.to_excel(excel_writer,index = False, sheet_name = 'SKU via APEX SPK')
+df_missing_SL.to_excel(excel_writer,index = False, sheet_name = 'SKU missing SL')
 excel_writer.save()
 #print("SPK_SL_Output.xlsx save successfully")
 
